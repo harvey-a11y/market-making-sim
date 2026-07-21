@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mmsim"
+version = "0.1.0"
+description = "Avellaneda-Stoikov market-making simulator: inventory-risk-managed quoting vs a naive symmetric quoter under paired-seed Monte Carlo"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Harvey Sohal", email = "harvey@sohal.info" }]
+dependencies = [
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+include = ["mmsim*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
