@@ -9,7 +9,14 @@ from __future__ import annotations
 import argparse
 import time
 
-from .metrics import comparison_table, summarize
+import numpy as np
+
+from .metrics import (
+    comparison_table,
+    paired_comparison,
+    paired_comparison_block,
+    summarize,
+)
 from .simulate import PairedRun, SimConfig, run_paired
 
 # Chart palette: validated categorical slots 1-2 plus chart chrome (light mode).
@@ -40,7 +47,6 @@ def plot_pnl_distribution(result: PairedRun, path: str) -> None:
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    import numpy as np
 
     as_pnl = result.avellaneda_stoikov.pnl
     nv_pnl = result.naive.pnl
@@ -81,7 +87,6 @@ def plot_inventory_paths(result: PairedRun, path: str) -> None:
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    import numpy as np
 
     fig, axes = plt.subplots(
         2, 1, figsize=(8.0, 5.5), dpi=150, sharex=True, sharey=True
@@ -146,6 +151,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
             summarize(result.avellaneda_stoikov), summarize(result.naive)
         )
     )
+    print()
+    # Paired inference under common random numbers. The bootstrap RNG is
+    # seeded from --seed (independently of the simulation draws) so the
+    # reported intervals are reproducible.
+    inference = paired_comparison(
+        result.avellaneda_stoikov,
+        result.naive,
+        rng=np.random.default_rng(cfg.seed),
+    )
+    print(paired_comparison_block(inference))
     print()
     print(f"elapsed: {elapsed:.1f}s")
 
