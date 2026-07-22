@@ -62,7 +62,7 @@ noise.
 | Steps per episode | T_steps | 3600 | quote-refresh grid over the session |
 | Episodes | N | 1000 | Monte Carlo paired episodes |
 | Initial mid | S₀ | 100.0 | arbitrary level (ABM, so it only sets scale of prices, not P&L) |
-| Adverse-selection horizon | h | 60 | steps ahead for the post-fill drift proxy |
+| Adverse-selection horizon | h | 60 | steps ahead for the post-fill drift proxy (fills without a complete window are excluded) |
 
 With the defaults the matched naive half-spread is 0.7454.
 
@@ -86,21 +86,34 @@ Metric                             Avellaneda-Stoikov      Naive symmetric
 --------------------------------------------------------------------------
 Mean terminal P&L                             +63.559              +67.123
 Std terminal P&L                                7.238               15.825
+Mean/std of terminal P&L                         8.78                 4.24
 Mean |terminal inventory|                        2.65                 7.92
 Inventory variance (path mean)                   2.19                15.68
 Mean max |inventory|                             4.62                11.62
 Fills per episode                                97.5                 90.7
-Adverse-selection proxy                       +0.0007              +0.0008
+Adverse-selection proxy                       +0.0008              +0.0009
+
+Paired inference (Avellaneda-Stoikov minus Naive symmetric, 1000 paired episodes):
+Mean terminal P&L difference        -3.564  (SE 0.428)
+95% CI, t-based (df=999)            [-4.403, -2.725]
+Std reduction (1 - std_AS/std_nv)   54.3%
+Bootstrap 95% CI (10000 resamples)  [50.1%, 58.1%]
 ```
 
 At the same average quoted spread, Avellaneda–Stoikov cuts terminal P&L
-standard deviation by 54% and path inventory variance by 86%, at the cost of
-about 5% of mean P&L (the skewed side quotes inside the naive quote, giving up
-a little edge per round trip to shed inventory). The adverse-selection proxy —
-the mean signed 60-step midprice move after each fill, from the position's
-perspective — is indistinguishable from zero for both strategies, which is
-expected: arrivals here are uninformed by construction, so this model contains
-no adverse selection to defend against (see limitations).
+standard deviation by 54.3% (paired-bootstrap 95% CI [50.1%, 58.1%], 10,000
+resamples) and path inventory variance by 86%, at the cost of about 5% of
+mean P&L: the per-episode paired difference is −3.564 (SE 0.428, t-based 95%
+CI [−4.403, −2.725]), so the give-up is small but statistically resolved (the
+skewed side quotes inside the naive quote, giving up a little edge per round
+trip to shed inventory). "Mean/std of terminal P&L" is exactly that ratio
+over episode P&Ls — it is not a Sharpe ratio, since these are not returns on
+a time series. The adverse-selection proxy — the mean signed 60-step midprice
+move after each fill, from the position's perspective, with fills in the last
+60 steps excluded because their lookahead window is incomplete — is
+indistinguishable from zero for both strategies, which is expected: arrivals
+here are uninformed by construction, so this model contains no adverse
+selection to defend against (see limitations).
 
 ![Terminal P&L distribution](examples/comparison.png)
 
@@ -115,14 +128,28 @@ no adverse selection to defend against (see limitations).
 Covers: λ(δ) strictly decreasing; reservation price below the mid when long
 (and symmetric when short, equal when flat); half-spread shrinking as `t → T`;
 a paired-seed 200-episode run asserting A–S inventory variance and P&L std
-are both below the naive quoter's; and bit-for-bit reproducibility of a
-same-seed rerun.
+are both below the naive quoter's; bit-for-bit reproducibility of a
+same-seed rerun; the Student-t quantile against standard critical values; a
+synthetic-data check that the paired CI recovers a known effect; bootstrap-CI
+determinism under a fixed seed; exclusion of incomplete-horizon fills from
+the adverse-selection proxy (pinned exactly on a linear path); and the
+empirical fill rate against `A·exp(−k·δ)·dt` on fixed quotes.
 
 ## Limitations
 
 - **Exponential fill model.** `λ(δ) = A·exp(−k·δ)` is the A–S modelling
   assumption, not an empirical fill curve; real fill probabilities depend on
   queue dynamics and order sizes.
+- **Bernoulli fill approximation; crossing quotes fill at the quoted price.**
+  Each step allows at most one fill per side: the Poisson arrival intensity
+  is collapsed into a single Bernoulli draw with probability
+  `1 − exp(−λ(δ)·dt)`, so multiple arrivals inside one step are undercounted
+  (a small effect at `λ·dt ≪ 1`, but an approximation, not an exact Poisson
+  scheme — a test validates the empirical fill rate against `A·exp(−k·δ)·dt`
+  on fixed quotes). And when inventory skew pushes a quote through the mid,
+  the order still executes at the quoted price via the same intensity
+  function; a real venue would fill such a crossing order at the touch, so
+  aggressive quotes are stylized here rather than realistic.
 - **No informed flow.** Arrivals are independent of future price moves, so
   adverse selection — a first-order cost for real market makers — is absent
   (the proxy metric confirms this). The variance reduction shown is purely

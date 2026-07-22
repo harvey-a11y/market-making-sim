@@ -1,6 +1,9 @@
+import math
+
 import numpy as np
 import pytest
 
+from mmsim.dynamics import generate_price_path
 from mmsim.simulate import SimConfig, _run_episode, run_paired
 
 
@@ -71,3 +74,28 @@ def test_adverse_proxy_excludes_incomplete_horizon_fills():
     assert adverse == pytest.approx((n - h + 1) * h * slope)
     # The per-fill proxy average is then exactly the h-step drift.
     assert adverse / adverse_fills == pytest.approx(h * slope)
+
+
+def test_empirical_fill_rate_matches_intensity_model():
+    """Fixed symmetric quotes at distance d from the mid: per step each side
+    fills with probability 1 - exp(-lambda dt) with lambda = A exp(-k d).
+    Pooling both sides over many episodes, the empirical fill frequency must
+    match A * exp(-k * d) * dt (the first-order rate quoted in the README)
+    with generous tolerance."""
+    cfg = SimConfig(episodes=1, seed=0)     # source of A, k, dt, n_steps
+    episodes = 30
+    rng = np.random.default_rng(2026)
+    for d in (0.3, 0.8):
+        skew = [0.0] * cfg.n_steps
+        half = [d] * cfg.n_steps
+        total_fills = 0
+        for _ in range(episodes):
+            path = generate_price_path(cfg.s0, cfg.sigma, cfg.dt, cfg.n_steps, rng)
+            u_bid = rng.random(cfg.n_steps).tolist()
+            u_ask = rng.random(cfg.n_steps).tolist()
+            out = _run_episode(skew, half, path.tolist(), u_bid, u_ask, cfg, False)
+            total_fills += out[4]
+        trials = 2 * episodes * cfg.n_steps  # both sides quote at distance d
+        empirical_rate = total_fills / trials
+        intensity_rate = cfg.arrival_a * math.exp(-cfg.arrival_k * d) * cfg.dt
+        assert empirical_rate == pytest.approx(intensity_rate, rel=0.10)
