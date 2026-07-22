@@ -58,6 +58,7 @@ class StrategyRun:
     max_abs_inventory: np.ndarray
     fills: np.ndarray                # fills per episode, both sides
     adverse_sum: np.ndarray          # per-episode sum of side * (S_{t+h} - S_t)
+    adverse_fills: np.ndarray        # fills with a complete lookahead horizon
     sample_inventory_paths: list = field(default_factory=list)
 
 
@@ -88,6 +89,7 @@ def _run_episode(skew, half, path, u_bid, u_ask, cfg: SimConfig, keep_path: bool
     cash = 0.0
     fills = 0
     adverse = 0.0
+    adverse_fills = 0
     inventory = [0] * (n + 1)
 
     for i in range(n):
@@ -101,18 +103,24 @@ def _run_episode(skew, half, path, u_bid, u_ask, cfg: SimConfig, keep_path: bool
         # (an aggressive quote that fills with near-certainty).
         p_bid = 1.0 - exp(-a * exp(-k * (s - bid)) * dt)
         p_ask = 1.0 - exp(-a * exp(-k * (ask - s)) * dt)
+        # Adverse-selection proxy: fills within h steps of session end have no
+        # complete lookahead window and are excluded (truncating the window at
+        # the final mid would bias late-fill contributions toward zero).
+        j = i + h
         if u_bid[i] < p_bid:            # our bid is lifted: we buy one unit
             q += 1
             cash -= bid
             fills += 1
-            j = i + h
-            adverse += (path[j] if j <= n else path[n]) - s
+            if j <= n:
+                adverse += path[j] - s
+                adverse_fills += 1
         if u_ask[i] < p_ask:            # our ask is hit: we sell one unit
             q -= 1
             cash += ask
             fills += 1
-            j = i + h
-            adverse -= (path[j] if j <= n else path[n]) - s
+            if j <= n:
+                adverse -= path[j] - s
+                adverse_fills += 1
         inventory[i + 1] = q
 
     inv = np.asarray(inventory, dtype=np.int64)
@@ -124,6 +132,7 @@ def _run_episode(skew, half, path, u_bid, u_ask, cfg: SimConfig, keep_path: bool
         int(np.abs(inv).max()),
         fills,
         adverse,
+        adverse_fills,
         inv if keep_path else None,
     )
 
@@ -148,7 +157,7 @@ def run_paired(cfg: SimConfig | None = None, keep_paths: int = 0) -> PairedRun:
         skew, half = strat.schedule(cfg.n_steps, cfg.dt)
         schedules.append((strat.name, skew.tolist(), half.tolist()))
 
-    n_metrics = 6
+    n_metrics = 7
     acc = [[[] for _ in range(n_metrics)] for _ in schedules]
     samples: list[list] = [[] for _ in schedules]
 
@@ -165,7 +174,7 @@ def run_paired(cfg: SimConfig | None = None, keep_paths: int = 0) -> PairedRun:
             for m in range(n_metrics):
                 acc[idx][m].append(out[m])
             if keep:
-                samples[idx].append(out[6])
+                samples[idx].append(out[7])
 
     def build(idx: int, name: str) -> StrategyRun:
         a = acc[idx]
@@ -177,6 +186,7 @@ def run_paired(cfg: SimConfig | None = None, keep_paths: int = 0) -> PairedRun:
             max_abs_inventory=np.asarray(a[3], dtype=np.int64),
             fills=np.asarray(a[4], dtype=np.int64),
             adverse_sum=np.asarray(a[5]),
+            adverse_fills=np.asarray(a[6], dtype=np.int64),
             sample_inventory_paths=samples[idx],
         )
 

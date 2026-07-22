@@ -28,14 +28,16 @@ class StrategyMetrics:
 def summarize(run: StrategyRun) -> StrategyMetrics:
     """Reduce per-episode results to the reported metrics.
 
-    The adverse-selection proxy is the mean, pooled over every fill, of the
-    signed midprice move over the next ``adverse_horizon`` steps from the
-    position's perspective (+ after a buy if the mid rose, + after a sell if
-    the mid fell). Negative values indicate fills that were adversely
-    selected.
+    The adverse-selection proxy is the mean, pooled over fills, of the signed
+    midprice move over the next ``adverse_horizon`` steps from the position's
+    perspective (+ after a buy if the mid rose, + after a sell if the mid
+    fell). Fills within ``adverse_horizon`` steps of session end have no
+    complete lookahead window and are excluded from the average (truncating
+    the window at the final mid would bias late-fill contributions toward
+    zero). Negative values indicate fills that were adversely selected.
     """
-    total_fills = int(run.fills.sum())
-    adverse = float(run.adverse_sum.sum() / total_fills) if total_fills else 0.0
+    horizon_fills = int(run.adverse_fills.sum())
+    adverse = float(run.adverse_sum.sum() / horizon_fills) if horizon_fills else 0.0
     return StrategyMetrics(
         name=run.name,
         mean_pnl=float(run.pnl.mean()),
