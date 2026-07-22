@@ -1,5 +1,7 @@
 # mmsim — Avellaneda–Stoikov market-making simulator
 
+[![CI](https://github.com/harvey-a11y/market-making-sim/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/harvey-a11y/market-making-sim/actions/workflows/ci.yml)
+
 A discrete-time simulator of a single-asset market maker over one trading
 session, comparing the Avellaneda–Stoikov (2008) inventory strategy against a
 naive symmetric quoter **at matched average spread**, under paired random
